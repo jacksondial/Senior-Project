@@ -1,0 +1,228 @@
+---
+title: "COVID-19 Time Series"
+output:
+  html_document:
+    code_folding: hide
+    keep_md: true
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(TSstudio)
+
+```
+
+```{r}
+data1 <- read_xlsx("../Public Records Request 11-17-2020.xlsx")
+data1$County <- factor(data1$County)
+
+#data2 <- data1 %>% 
+#  mutate(dummy_var = 1) %>% 
+#  group_by(`Report Date`, County) %>%
+#  summarise(count_cases = sum(dummy_var)) %>% 
+#  mutate(population = case_when(
+#    County == "Bonneville" ~ 119062,
+#    County == "Clark" ~ 845,
+#    County == "Custer" ~ 4315,
+#    County == "Fremont" ~ 13099,
+#    County == "Jefferson" ~ 29871,
+#    County == "Lemhi" ~ 8027,
+#    County == "Madison" ~ 39907,
+#    County == "Teton" ~ 12142
+#  )) %>% 
+#  mutate(case_adj = (count_cases / population) * 10000) 
+
+data_rename <- data1 %>% 
+  rename(
+    report_date =`Report Date`,
+    released_date = `Released from EIPH Monitoring`,
+    age_group = `Age Group (by decade)`,
+    exposure = `Source of Exposure`
+  )
+
+#duration_monitored <- data_rename %>% 
+#  mutate(total_time = difftime(released_date, report_date, unit = "days")) #%>% 
+#  mutate(pos_time = sqrt(as.numeric(total_time)^2))
+
+#data_agg <- data2 %>% 
+#  group_by(`Report Date`) %>% 
+#  summarise(total_case_adj = sum(case_adj))
+```
+
+```{r}
+
+#my_ts <- ts(data_agg$total_case_adj, start = c(2020),frequency = 365)
+
+#plot.ts(my_ts)
+```
+
+
+```{r}
+#ggplot(data_agg, aes(x = `Report Date`, y = total_case_adj))+
+#  geom_line()+
+#  theme_bw()
+
+#library(TTR)
+#time_series_smooth <- SMA(my_ts, n = 7)
+#plot.ts(time_series_smooth, xlab = "Days since March 14, 2020", ylab = "Smoothened Number of Cases in EIPH")
+#ts_info(my_ts)
+```
+
+```{r}
+#data(USVSales)
+#ts_info(USVSales)
+
+#ts_plot(USVSales,
+#        Xgrid = TRUE,
+#        Ygrid = TRUE,
+#        Xtitle = "Year",
+#        Ytitle = "Thousands of Units",
+#        title = "US Monthly Total Vehicles Sales")
+```
+
+
+### Create a value to subtract off the running total
+
+```{r}
+neg_values <- data_rename %>% 
+  mutate(neg_val = -1)
+data_rename <- data_rename %>% 
+  mutate(pos_val = 1)
+
+#join_2 <- neg_values %>% inner_join(data_rename, on = c(released_date, report_date)) %>% 
+#  group_by(report_date) %>% 
+#  mutate(total_pos = sum(pos_val)) %>% 
+#  mutate(total_neg = sum(neg_val))
+  
+
+#joined_data <- neg_values %>% full_join(data1, by = c("neg_val" = "pos_val")) %>% 
+#  mutate(runn_total = cumsum(neg_val))
+
+#merged_data <- merge(data_rename, neg_values, by = c("report_date", "released_date"))
+
+
+reported <- data_rename %>% 
+  rename(date = report_date,
+         val = pos_val)
+released <- neg_values %>% 
+  rename(date = released_date,
+         val = neg_val)
+
+#join3 <- reported %>% full_join(released, on = date, by = NULL)
+
+
+part_1 <- reported %>% 
+  select(date, val)
+part_2 <- released %>% 
+  select(date, val)
+
+stacked <- rbind(part_1, part_2) %>% 
+  group_by(date) %>% 
+  summarise(total = sum(val)) %>% 
+  arrange(date) %>% 
+  mutate(total_sum = cumsum(total))
+
+ggplot(stacked, aes(x = date, y = total_sum))+
+  geom_point()+
+  theme_bw()
+
+
+###uschange %>%
+###  as.data.frame() %>%
+###  GGally::ggpairs()
+
+```
+
+## Now actually going to try
+
+### Classical decomposition
+
+```{r}
+stacked_ts <- ts(stacked$total_sum, start = c(2020,73), frequency = 365)
+str(stacked_ts)
+
+stacked_ts %>% decompose(type = "additive")+
+  autoplot()
+
+```
+
+### X11 Decomposition
+
+```{r}
+library(seasonal)
+fit <- stacked_ts %>% seas(x11 = "")
+autoplot(fit)
+```
+
+### Seats Decomposition
+
+```{r}
+fit_2 <- stacked_ts %>% seas()
+autoplot(fit)
+```
+
+### STL Decomposition
+
+```{r}
+
+
+stacked_ts %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+
+library(forecast)
+
+stacked_ts %>% 
+  msts(stacked_ts, seasonal.periods = 7)
+
+```
+
+### Non-trend Series with simulated data
+
+```{r}
+set.seed(1234)
+
+ts_non_trend
+
+```
+
+### Arima Errors
+
+```{r}
+as.numeric(stacked$date)
+fit <- Arima(stacked_ts, xreg=1:222, order = c(1,1,0))
+summary(fit)
+fit$fitted
+plot.ts(fit$fitted)
+lines(stacked_ts, col = "firebrick", add = TRUE)
+predict.Arima(fit, n.ahead=1)
+
+
+arima_1 <- arima(stacked_ts, order = c(1,1,1), seasonal = list(order = c(0,1,1), period = 7))
+
+predict(arima_1, 4)
+```
+
+
+### time series of month?
+
+```{r}
+library(lubridate)
+monthly <- stacked %>% 
+  group_by(month(ymd(date))) %>% 
+  summarise(monthly_counts = round(sum(total))) %>% 
+  mutate(running_monthly = cumsum(monthly_counts))
+
+month_ts <- ts(monthly$running_monthly, start = c(2019,3), frequency = 12)
+
+month_ts %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+```

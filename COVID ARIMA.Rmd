@@ -1,0 +1,175 @@
+---
+title: "COVID ARIMA"
+output: 
+  html_document:
+    code_folding: hide
+    theme: flatly
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Wrangle the Data
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(forecast)
+covid_1 <- read_xlsx("../Public Records Request 11-17-2020.xlsx")
+covid_1$County <- factor(covid_1$County)
+covid_rename <- covid_1 %>% 
+  rename(
+    report_date =`Report Date`,
+    released_date = `Released from EIPH Monitoring`,
+    age_group = `Age Group (by decade)`,
+    exposure = `Source of Exposure`
+  )
+neg_values <- covid_rename %>% 
+  mutate(neg_val = -1)
+data_rename <- covid_rename %>% 
+  mutate(pos_val = 1)
+
+reported <- data_rename %>% 
+  rename(date = report_date,
+         val = pos_val)
+released <- neg_values %>% 
+  rename(date = released_date,
+         val = neg_val)
+
+part_1 <- reported %>% 
+  select(date, val)
+part_2 <- released %>% 
+  select(date, val)
+
+stacked <- rbind(part_1, part_2) %>% 
+  group_by(date) %>% 
+  summarise(daily_total = sum(val)) %>% 
+  arrange(date) %>% 
+  mutate(total_sum = cumsum(daily_total)) %>% 
+  select(total_sum)#%>% 
+# This removes the value correctly, but the erorr still occurs
+  na.omit() %>% 
+  select(total_sum)
+```
+
+
+
+### Plot the Data
+
+```{r}
+ggplot(stacked, aes(x = date, y = total_sum))+
+  theme_bw()+
+  labs(title = "COVID-19 Cases in EIPH District", subtitle = "Data Obtained Directly From EIPH", x = "Month (2020)", y = "Count of Active Cases")+
+  geom_line(size = 1.3, col = "red3") #+
+  geom_vline(xintercept = 2020-09-11, color = "black")
+
+stacked_ts_prep <- stacked %>% 
+  filter(daily_total != -947) %>% #This removes the observation correctly, but error still occurs
+  select(total_sum)
+
+#This does not solve the error, but it does remove the value
+cleaned_ts <- stacked[-nrow(stacked),]
+
+clean_df <- as.data.frame(cleaned_ts)
+
+covid_ts <- ts(clean_df$total_sum, start = c(2020,73), frequency = 365)
+
+covid_arima1 <- auto.arima(covid_ts)
+covid_arima1
+
+#Try to use a different arima function to create the actual model:
+##Cannot use the forecast() function, because it needs stl data, but stl data needs two years or more
+
+
+### Make another arima model with another function
+arima_capital <- Arima(covid_ts, order = c(0,3,3)) #, seasonal = c(0,0,0) adding this into the function is likely only used if the series has a more than two year span, ie actually has seasons
+arima_preds <- predict(arima_capital, 3)
+
+arima_preds$pred[1:3]
+
+
+c(covid_ts,arima_preds$pred[1:3])
+
+plot(c(covid_ts,arima_preds$pred[1:3]), type = "l")
+abline(v = 220)
+
+
+
+### Make a diffferent arima model using another function
+
+### This does the same thing as the capital arima function, as far as I can tell
+arima_lowercase <- arima(covid_ts, order = c(0,3,3), seasonal = list(order = c(0,0,0), period= 7))
+predict(arima_lowercase, 3)
+
+please_work <- arima0(covid_ts)
+please_work
+#Predict 3 days ahead
+predict(arima_capital, 3)
+```
+
+
+
+
+
+The auto.arima function goes through a process of trying different model parameters for the ARIMA model, and selects the optimal value for each of the three parameters; p, d, and q.This model has selected values of (0,1,0) for the parameters. I will now attempt to explain what each of these mean.
+
+#### p Parameter
+
+The p parameter represents the order of the AR part of ARIMA, which stands for Auto Regressive. All that auto regressive means is that this model uses the past to predict the future. THe number means the number of autoregressive terms.
+
+#### d Parameter
+
+The d parameter is the order for the integrated part of ARIMA, and the non-seasonal differences needed for stationarity.
+
+#### q Parameter
+
+The q parameter is the order of the moving average part. It is the number of lagged forecast errors in the prediction equation.
+
+
+
+```{r}
+Box.test(covid_ts, lag=4, type="Ljung-Box")
+```
+
+
+The $H_O$ and $H_a$ hypotheses for the Box-Ljung test are as follows:
+
+$$
+H_O: \text{The data are independently distributed}
+$$
+
+$$
+H_a: \text{The data are not independently distributed, they exhibit serial correlation}
+$$
+
+The significant p-value that is provided means that the data exhibit serial correlation, or that the errors terms are correlated. This is good for our model, as we have chosen an ARIMA model.
+
+
+
+
+#### Log-Likelihood
+
+The log-likelihood of this model is telling us the logarithm of the probability of the observed data coming from the estimated model. With our quarterly model, this value is -1255.58, which does not make sense to me right now because you cannot take the log of a negative.
+
+#### AIC
+
+This stands for Akaike's Information Criterion. This is also used in regression, but it is calculated by:
+$$
+\text{AIC} = -2log(L)+2(p+q+k+1)
+$$
+
+where $L$ is the likelihood of the data, $k=1$ if $c \neq 0$, and $k = 0$ if $c = 0$
+
+#### AICc
+
+AICc is the corrected AIC, and is calculated by:
+
+$$
+\text{AICc} = \text{AIC} + \frac{2(p+q+k+1)(p+q+k+2)}{T-p-q-k-2}
+$$
+
+
+

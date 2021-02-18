@@ -1,0 +1,327 @@
+---
+title: "Initial Plots"
+author: "Jackson Dial"
+date: "`r format(Sys.time(), '%B %d, %Y')`"
+output:
+  html_document:
+    theme: flatly
+    keep_md: true
+    toc: true
+    toc_float: true
+    code_folding: hide
+    fig_align: 'center'
+editor_options: 
+  chunk_output_type: console
+---
+
+## Libraries
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(readxl)
+library(pander)
+library(mosaic)
+library(DT)
+```
+
+## Sources
+
+[link](https://www.idaho-demographics.com/counties_by_population)
+
+## Read in the Data
+
+```{r message=FALSE, warning=FALSE}
+data1 <- read_xlsx("Public Records Request 11-17-2020.xlsx")
+data1$County <- factor(data1$County)
+
+#Create a population-adjusted case count per county
+
+data2 <- data1 %>% 
+  mutate(dummy_var = 1) %>% 
+  group_by(`Report Date`, County) %>%
+  summarise(count_cases = sum(dummy_var)) %>% 
+  mutate(population = case_when(
+    County == "Bonneville" ~ 119062,
+    County == "Clark" ~ 845,
+    County == "Custer" ~ 4315,
+    County == "Fremont" ~ 13099,
+    County == "Jefferson" ~ 29871,
+    County == "Lemhi" ~ 8027,
+    County == "Madison" ~ 39907,
+    County == "Teton" ~ 12142
+  )) %>% 
+  mutate(case_adj = (count_cases / population) * 10000) 
+
+
+
+```
+
+## Let's try some ggplots
+
+```{r message=FALSE, warning=FALSE}
+ggplot(data2, aes(x = `Report Date` ,y = count_cases, color = County))+
+  geom_line()+
+  facet_wrap(vars(County), ncol = 4)+
+  theme_bw()+
+  theme(legend.position = "none")
+
+
+ggplot(data2, aes(x = `Report Date`, y = case_adj, color = County))+
+  geom_line()+
+  facet_wrap(vars(County), ncol = 4)+
+  theme_bw()+
+  theme(legend.position = "none")+
+  labs(y = "New Cases per 10,000",
+       title = "Population Adjusted Incidence Rates per County")
+
+```
+
+## Wide Data
+
+```{r}
+wide_data_cases <- pivot_wider(data2,
+                         names_from = County,
+                         values_from = count_cases,
+                         values_fill = 0)
+
+pairs(wide_data_cases)
+
+wide_data_adj <- pivot_wider(data2,
+                         names_from = County,
+                         values_from = case_adj,
+                         values_fill = 0)
+
+pairs(wide_data_adj)
+
+running_total_cases <- data2 %>% 
+  group_by(County, `Report Date`) %>% 
+  mutate(cum_sum_ever = cumsum(count_cases))
+
+wide_running <- running_total_cases %>% pivot_wider(
+  names_from = County,
+  values_from = cum_sum_ever,
+  values_fill = 0
+)
+
+pairs(wide_running)
+
+```
+
+## Duration Comparisons
+
+```{r}
+data_rename <- data1 %>% 
+  rename(
+    report_date =`Report Date`,
+    released_date = `Released from EIPH Monitoring`,
+    age_group = `Age Group (by decade)`,
+    exposure = `Source of Exposure`
+  )
+
+# Compute the amount of time spent under EIPH monitoring
+# Some values were negative, but it was assumed the dates were reversed by accident.
+# This was accounted for by square-rooting the square of each value.
+
+duration_monitored <- data_rename %>% 
+  mutate(total_time = difftime(released_date, report_date, unit = "days")) %>% 
+  mutate(pos_time = sqrt(as.numeric(total_time)^2))
+
+ggplot(duration_monitored,aes(x = as.factor(County), y = pos_time))+
+  geom_boxplot(aes(fill = County))+
+  theme_bw()+
+  theme(panel.grid.major.x = element_blank())
+
+```
+
+## ANOVA Test
+
+```{r message=FALSE, warning=FALSE}
+favstats(total_time~County, data = duration_monitored)
+
+case.aov <- aov(pos_time ~ County, data = duration_monitored,
+                contrasts = list(County = contr.sum))
+
+pander(summary(case.aov))
+
+```
+
+
+## Pairwise Comparisons
+
+```{r}
+pairwise.t.test(duration_monitored$pos_time, duration_monitored$County, "none") %>% pander()
+```
+
+## Effects
+
+```{r}
+dummy.coef(case.aov) %>% pander()
+
+```
+
+## Wilcoxon Rank-Sum Test
+
+```{r}
+kruskal.test(pos_time ~ County, data = duration_monitored)
+
+```
+
+## Exposure vs County?
+
+```{r}
+#joined_data <- data1 %>% 
+#  inner_join(data2, by = c(`Report Date` = `Report Date`, County = County))
+
+exp_county <- data_rename %>% 
+  group_by(exposure, County) %>% 
+  summarise(count = length(ID)) %>% 
+  mutate(exp = case_when(
+    exposure %in% c("community Transmission", "Community Transmission", "Community TRansmission") ~ "Community Transmission",
+    exposure %in% c("contact with a Confirmed Case", "Contact with a Confirmed Case", "Contact With a Confirmed Case") ~ "Contact with a confirmed case",
+    exposure %in% c("Ongoing Investigation", "ONgoing Investigation") ~ "Ongoing investigation",
+    exposure == "Travel" ~ "Travel"
+  )) %>% 
+  subset(select = -c(exposure))
+
+ggplot(exp_county, aes(x = County, y = count, fill = exp))+
+  geom_bar(stat = "identity", position = "dodge")+
+  theme_bw()+
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())+
+  labs(y = "Number of Reported Cases",
+       fill = "Exposure Source")
+
+exp_wide <- exp_county %>% pivot_wider(names_from = County,
+                                       values_from = count)
+
+exp_agg <- exp_county %>% 
+  group_by(County, exp) %>% 
+  summarise(count_tot = sum(count))
+
+exp_wide <- exp_agg %>% pivot_wider(names_from = County,
+                                    values_from = count_tot,
+                                    values_fill = 0)
+
+#exp_count_table <- table(exp_wide$County, exp_wide$exp)
+
+#pander(exp_count_table)
+my_table <- as.matrix(exp_wide[,-1])
+
+rownames(my_table) <- exp_wide[,1][[1]]
+
+
+```
+
+## Chi-Squared Test
+
+```{r}
+chisq.test(my_table[-4,])$expected %>% pander()
+```
+
+
+## Hospitalization and length of Supervision? Logistic Regression Model
+
+```{r}
+len_hosp <- data_rename %>% 
+  mutate(length_hosp = difftime(released_date, report_date, unit = "days")) %>% 
+  mutate(pos_len = sqrt(as.numeric(length_hosp)^2))
+
+
+len_glm <- glm(formula = (Hospitalized == "Yes") ~ pos_len, data = len_hosp, family = "binomial")
+summary(len_glm)
+
+b <- coef(len_glm)
+
+plot(formula = (Hospitalized == "Yes") ~ pos_len, data = len_hosp, pch = 16, col = rgb(.1,.1,.1,.05), xlab = "Length of Monitoring", ylab = "Probability of Being Hospitalized (1 = Hospitalized)")
+
+curve(exp(b[1] + b[2]*x)/(1+exp(b[1]+b[2]*x)), add = TRUE)
+library(ResourceSelection)
+hoslem.test(len_glm$y, len_glm$fitted, g = 30)
+```
+
+## Hospitalization and Length
+
+```{r}
+sex_length_glm <- glm(formula = (Sex == "F") ~ pos_len, data = len_hosp, family = "binomial")
+summary(sex_length_glm)
+#insignificant p-values, no need to plot
+```
+
+## Length and Age Group
+
+```{r}
+table(len_hosp$age_group)
+# Create a column classifying those form 0-39 as 0 and those from 40-90 as 1
+two_age_groups <- len_hosp %>% 
+  mutate(age_group_2 = case_when(
+    age_group %in% c("0-4", "5-12", "13-17", "18-29", "30-39") ~ 0,
+    TRUE ~ 1
+  ))
+
+age_glm <- glm(formula = (age_group_2 == 1) ~ pos_len, data = two_age_groups, family = "binomial")
+
+summary(age_glm)
+
+b1 <- coef(age_glm)
+
+plot(formula = (age_group_2 == 1) ~ pos_len, data = two_age_groups, pch = 16, col = as.factor(age_group_2), xlab = "Length of Monitoring", ylab = "Probability of Being above 40")
+
+curve(exp(b1[1] + b1[2]*x)/(1+exp(b1[1]+b1[2]*x)), add = TRUE)
+
+```
+
+
+```{r}
+len_hosp <- len_hosp %>% 
+  mutate(age_group = factor(age_group, levels = c("0-4", "5-12", "13-17", "18-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90+"))) %>% 
+  mutate(Hospitalized = case_when(
+    Hospitalized == "Yes" ~ "Yes",
+    TRUE ~ "No"
+  ))
+```
+
+```{r}
+ggplot(len_hosp, aes(x = as.factor(age_group), y = pos_len, fill = as.factor(Hospitalized)))+
+  geom_bar(position = "stack", stat = "identity")+
+  facet_wrap(vars(County), scales = "free")+
+  theme(axis.text.x = element_text(angle = 30))+
+  coord_flip()
+
+#library(rnoaa)
+
+#vignette("rnoaa")
+
+#options(noaakey = "ETJJubDnGOQeIsueSktTGtoOAJBssfnw")
+
+#weather_data <- ncdc_locs(locationcategoryid = "CITY", sortfield = "name", sortorder = "desc")
+
+#eiph_cities <- ncdc_locs(locationcategoryid = "CITY", sortfield = "name", sortorder = "desc") %>% 
+#  filter(name == "Rexburg, ID US")
+#str(weather_data)
+
+#grep("ID", weather_data$data$name, value = TRUE)
+
+```
+
+```{r}
+library("devtools")
+install_github("Ram-N/weatherData")
+library(weatherData)
+weather_data <- checkDataAvailabilityForDateRange("KIDA", "2020-01-01", "2020-11-20")
+
+getDetailedWeather("KIDA", "2020-01-01", "id", 
+        opt_temperature_columns = T, opt_compress_output = T, 
+        opt_verbose = T)
+
+```
+
+
+### Geofacet per county of the progression of disease prevalence
+
+```{r}
+#library(geofacet)
+#ggplot(data2, aes(x = `Report Date`, y = case_adj))+
+#  facet_geo(vars(County))
+
+
+```
