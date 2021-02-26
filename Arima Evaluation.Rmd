@@ -59,6 +59,11 @@ cleaned_ts <- stacked[-nrow(stacked),]
 
 clean_df <- as.data.frame(cleaned_ts)
 
+
+#This is the last place that is used for the automation of the plot
+###
+
+
 covid_ts <- ts(clean_df$total_sum, start = c(2020,73), frequency = 365)
 arima_capital <- Arima(covid_ts, order = c(0,3,3))
 
@@ -145,15 +150,49 @@ ggplot(both_data) +
   geom_line(aes(x = 1:total_number, y = total_sum, group = 1, col = "Predicted"), size = 1.5)+
   scale_color_manual(name = "Cases",
                      breaks = c("Predicted", "Actual"),
-                     values = c("Predicted" = "red2", "Actual" = "black"))+
+                     values = c("Predicted" = "firebrick", "Actual" = "black"))+
   theme_bw()+
   labs(x = "Number of Days from March 14",
        y = "Case Count",
        title = "Predicted VS. Actual Case Counts Using Arima",
-       subtitle = "Cases from EIPH")
+       subtitle = "Cases from EIPH")+
+  geom_vline(xintercept = train_days)
 
 }
 
-Covid_arima_fun(data = clean_df, train_days = 50, predict_days = 12, p = 0, d = 3, q = 3)
+Covid_arima_fun(data = clean_df, train_days = 38, predict_days = 29, p = 0, d = 1, q = 0)
 
 ```
+
+
+## Selecting p,d,q
+
+Stationarity refers to the fact that the counts is mean-reverting
+
+Use the Augmented dickey fuller test to determine if the time series is stationary.
+
+
+
+
+## Modeling Procedure using Arima()
+
+
+```{r}
+#Plot the data
+ggplot(clean_df, aes(x = 1:221, y = total_sum))+
+  geom_line()
+
+#if necessary, transform using boxCox()
+
+#There does not appear to be any evidence for changing variance, so no transformation #is necessary
+
+#If the data are non-stationary, take first differences of them unti lthey become stationary
+auto.arima(covid_ts)
+
+my_ts <- ts(clean_df, start = c(2020, 73), frequency = 365)
+
+my_ts %>% diff() %>% ggtsdisplay(main="")
+
+
+```
+
