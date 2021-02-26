@@ -156,11 +156,17 @@ ggplot(both_data) +
        y = "Case Count",
        title = "Predicted VS. Actual Case Counts Using Arima",
        subtitle = "Cases from EIPH")+
-  geom_vline(xintercept = train_days)
+  geom_vline(xintercept = train_days)+
+  #xlim(180,225)+
+  #ylim(500,1000)+
+  theme(panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
 
 }
 
-Covid_arima_fun(data = clean_df, train_days = 38, predict_days = 29, p = 0, d = 1, q = 0)
+Covid_arima_fun(data = clean_df, train_days = 216, predict_days = 5, p = 2, d = 1, q = 2)
+
+#My next steps are to calculate the RMSE of my predictions
 
 ```
 
