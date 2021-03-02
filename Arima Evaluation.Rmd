@@ -16,8 +16,16 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(readxl)
 library(forecast)
-covid_1 <- read_xlsx("../Public Records Request 11-17-2020.xlsx")
+#old data
+#covid_1 <- read_xlsx("../Public Records Request 11-17-2020.xlsx")
+#new_data
+covid_1 <- read_xlsx("../Power BI Source 2-27-2021 Jackson.xlsx")
+#New data as a csv
+#covid_1 <- read_csv("../Power BI Source 2-27-2021 Jackson.csv")
+
+
 covid_1$County <- factor(covid_1$County)
+
 covid_rename <- covid_1 %>% 
   rename(
     report_date =`Report Date`,
@@ -25,6 +33,11 @@ covid_rename <- covid_1 %>%
     age_group = `Age Group (by decade)`,
     exposure = `Source of Exposure`
   )
+#This is only for the situation of using the csv instead of the xlsx
+  # %>% 
+  # select(!c(X11, X12)) %>% 
+  # as.Date(report_date, released_date)
+
 neg_values <- covid_rename %>% 
   mutate(neg_val = -1)
 data_rename <- covid_rename %>% 
@@ -38,23 +51,31 @@ released <- neg_values %>%
          val = neg_val)
 
 part_1 <- reported %>% 
-  select(date, val)
+  select(date, val) %>% 
+  na.omit()
 part_2 <- released %>% 
-  select(date, val)
+  select(date, val) %>% 
+  na.omit()
 
+#part_2_char <- part_2 %>% 
+#  as.character(date)
+
+
+
+
+#This is where the error is happening
 stacked <- rbind(part_1, part_2) %>% 
   group_by(date) %>% 
   summarise(daily_total = sum(val)) %>% 
   arrange(date) %>% 
   mutate(total_sum = cumsum(daily_total)) %>% 
-  select(total_sum)#%>% 
+  select(total_sum)
+
+#%>% 
 # This removes the value correctly, but the error still occurs
   #na.omit() %>% 
   #select(total_sum)
-```
 
-
-```{r}
 cleaned_ts <- stacked[-nrow(stacked),]
 
 clean_df <- as.data.frame(cleaned_ts)
@@ -166,17 +187,16 @@ ggplot(both_data) +
   labs(x = "Number of Days from March 14",
        y = "Case Count",
        title = "Predicted VS. Actual Case Counts Using Arima",
-       subtitle = calculate_1)+
+       subtitle = paste("RMSE: ", calculate_1))+
   geom_vline(xintercept = train_days)+
-  #xlim(180,225)+
+  xlim(train_days-20,total_number + 1)+
   #ylim(500,1000)+
   theme(panel.grid.minor = element_blank(),
         panel.grid.major.x = element_blank())
 }
 
-Covid_arima_fun(data = clean_df, train_days = 216, predict_days = 5, p = 2, d = 1, q = 2)
+Covid_arima_fun(data = clean_df, train_days = 200, predict_days = 5, p = 2, d = 1, q = 2)
 
-#My next steps are to calculate the RMSE of my predictions
 
 ```
 
