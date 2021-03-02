@@ -58,10 +58,10 @@ stacked <- rbind(part_1, part_2) %>%
 cleaned_ts <- stacked[-nrow(stacked),]
 
 clean_df <- as.data.frame(cleaned_ts)
+```
 
-
-#This is the last place that is used for the automation of the plot
-###
+```{r}
+#This is the not used for the automation of the plotting, thus is not really necessary
 
 
 covid_ts <- ts(clean_df$total_sum, start = c(2020,73), frequency = 365)
@@ -82,6 +82,7 @@ abline(v = 220)
 ### Use 30 days to predict 5 days
 
 ```{r}
+#not automated, so not really needed either
 train_30 <- clean_df %>% 
   slice(1:30)
 
@@ -106,6 +107,11 @@ predicted_total <- train_30 %>%
 
 both_data <- true_35 %>% 
   cbind(predicted_total)
+
+calculate_1 <- both_data %>% 
+  slice(31:35) %>% 
+  transmute(squared = (true_total - total_sum)^2) %>% 
+  summarise(avg = mean(squared))
 
 ggplot(both_data) +
   geom_line(aes(x = 1:35, y = true_total, group = 2, col = "Actual"), size = 3)+
@@ -145,6 +151,11 @@ predicted_total <- train %>%
   rbind(pred_pos)
 both_data <- true %>% 
   cbind(predicted_total)
+train_plus_1 <- train_days+1
+calculate_1 <- both_data %>% 
+  slice(train_plus_1:total_number) %>% 
+  transmute(squared = (true_total - total_sum)^2) %>% 
+  summarise(RMSE = mean(squared))
 ggplot(both_data) +
   geom_line(aes(x = 1:total_number, y = true_total, group = 2, col = "Actual"), size = 3)+
   geom_line(aes(x = 1:total_number, y = total_sum, group = 1, col = "Predicted"), size = 1.5)+
@@ -155,13 +166,12 @@ ggplot(both_data) +
   labs(x = "Number of Days from March 14",
        y = "Case Count",
        title = "Predicted VS. Actual Case Counts Using Arima",
-       subtitle = "Cases from EIPH")+
+       subtitle = calculate_1)+
   geom_vline(xintercept = train_days)+
   #xlim(180,225)+
   #ylim(500,1000)+
   theme(panel.grid.minor = element_blank(),
         panel.grid.major.x = element_blank())
-
 }
 
 Covid_arima_fun(data = clean_df, train_days = 216, predict_days = 5, p = 2, d = 1, q = 2)
