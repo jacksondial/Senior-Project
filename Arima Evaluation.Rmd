@@ -79,6 +79,39 @@ stacked <- rbind(part_1, part_2) %>%
 cleaned_ts <- stacked[-nrow(stacked),]
 
 clean_df <- as.data.frame(cleaned_ts)
+
+
+```
+
+## Augmented Dickey Fuller Test
+
+```{r}
+test_ts <- ts(stacked, start = c(2020,73), frequency = 365)
+
+library(tseries)
+adf.test(test_ts)
+
+auto.arima(test_ts)
+```
+
+What the adf test does run a test to determine if the ts is stationary. The null is that the ts is NON-stationary. This test shows that our ts is non-stationary. This means our d term will not be 0. To determine how many lags we need to achieve stationarity, we will look at the acf plot.
+
+```{r}
+
+ggAcf(test_ts)
+
+test_ts %>% diff() %>% ggAcf()
+test_ts %>% diff() %>% autoplot()
+
+```
+
+What we want here is an acf hovering around 0. The second plot shows the acf with a single order of differencing, and the acf is basically 0-reverting, meaning only a single order of difference must be used. This is also shown in the autoplot, that the values are approximately evenly distributed around 0.
+
+To determine p, we examine the pacf plot, with the already differenced data, as determined when finding d:
+
+```{r}
+test_ts %>% diff() %>% pacf()
+
 ```
 
 ```{r}
@@ -195,7 +228,7 @@ ggplot(both_data) +
         panel.grid.major.x = element_blank())
 }
 
-Covid_arima_fun(data = clean_df, train_days = 200, predict_days = 5, p = 2, d = 1, q = 2)
+Covid_arima_fun(data = clean_df, train_days = 302, predict_days = 5, p = 2, d = 1, q = 2)
 
 
 ```
