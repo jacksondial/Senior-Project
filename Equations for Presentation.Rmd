@@ -1,0 +1,24 @@
+---
+title: "Equations"
+output:
+html_document:
+  code_folding: hide
+  theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Please Work
+
+$$ 
+\underbrace{\widehat{Y}_t}_\text{Predited Value} = \overbrace{ \mu}^\text{Mean} + \underbrace{\phi_1 Y_{t-1}+...+\phi_pY_{t-p}} _\text{Auto-Regressive Parameters}+ \overbrace{\theta_1 \epsilon_{t-1}+...+ \theta_q \epsilon_{t-q} }^\text{Moving Average Parameters}+ \underbrace{\epsilon_t}_\text{White Noise}
+$$
+
+$$
+Y_t=(Y_t - Y_{t-1}) - (Y_{t-1} - Y_{t-2}) = Y_t-2Y_{t-1}+Y_{t-2}
+$$
+
+
+

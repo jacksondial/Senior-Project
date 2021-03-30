@@ -8,6 +8,8 @@ editor_options:
   chunk_output_type: console
 ---
 
+## Senior Project
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -16,6 +18,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(readxl)
 library(forecast)
+library(ggthemes)
 #old data
 #covid_1 <- read_xlsx("../Public Records Request 11-17-2020.xlsx")
 #new_data
@@ -71,7 +74,11 @@ stacked <- rbind(part_1, part_2) %>%
   mutate(total_sum = cumsum(daily_total)) %>% 
   select(total_sum)
 
-#%>% 
+  
+
+#write_csv(stacked, "Adam_data_mar_12.csv")
+  
+  #%>% 
 # This removes the value correctly, but the error still occurs
   #na.omit() %>% 
   #select(total_sum)
@@ -84,6 +91,8 @@ clean_df <- as.data.frame(cleaned_ts)
 ```
 
 ## Augmented Dickey Fuller Test
+
+### To find d
 
 ```{r}
 test_ts <- ts(stacked, start = c(2020,73), frequency = 365)
@@ -101,18 +110,34 @@ What the adf test does run a test to determine if the ts is stationary. The null
 ggAcf(test_ts)
 
 test_ts %>% diff() %>% ggAcf()
+test_ts %>% diff() %>% diff() %>%  ggAcf()
+
 test_ts %>% diff() %>% autoplot()
 
 ```
 
+An acf plot is a bar chart of the coefficients of correlation between a time series and lags of itself.
+
 What we want here is an acf hovering around 0. The second plot shows the acf with a single order of differencing, and the acf is basically 0-reverting, meaning only a single order of difference must be used. This is also shown in the autoplot, that the values are approximately evenly distributed around 0.
+
+Differencing means that we replace the series $X_1, X_2,... ,X_n$ with $D_1, D_2, ... D_{n-1}$ where $D_1=X_2-X_1$. This technique is implemented to ensure constant variance in the series. If the differencing term is 2, the new differenced series would be $D_1, D_2,...,D_{n-2}$ where $D_1 = (X_i-X_{i-1})-(X_{i-1}-X_{i-2})$, or $X_i - 2X_{i-1}+X_{i-2}$ 
+
+
+
+
+### To find p
 
 To determine p, we examine the pacf plot, with the already differenced data, as determined when finding d:
 
 ```{r}
 test_ts %>% diff() %>% pacf()
+test_ts %>% diff() %>% ggPacf()+
+  xlim(0,71)
 
 ```
+
+The PACF plot is a plot of the partial correlation coefficients between the series and lags of itself. If the partial auto-correlation is significant at lag k and not significant at any higher order lags, then this suggests that you should try fitting an autoregressive model of order k
+
 
 ```{r}
 #This is the not used for the automation of the plotting, thus is not really necessary
@@ -184,6 +209,12 @@ ggplot(both_data) +
 #30 = train_data
 #train_30 = train
 #true_35 = true
+# data <- clean_df
+# train_days = 35 
+# predict_days = 5
+# p = 2
+# d = 2
+# q = 3
 
 Covid_arima_fun <- function(data,train_days,predict_days,p,d,q){
 train <- data %>% 
@@ -209,27 +240,89 @@ train_plus_1 <- train_days+1
 calculate_1 <- both_data %>% 
   slice(train_plus_1:total_number) %>% 
   transmute(squared = (true_total - total_sum)^2) %>% 
-  summarise(RMSE = mean(squared))
+  summarise(RMSE = signif(sqrt(mean(squared))))
+calculate_2 <- both_data %>% 
+  slice(train_plus_1:total_number) %>% 
+  mutate(perc_off = abs(100*(true_total - total_sum)/ true_total)) %>% 
+  summarise(avg_perc = signif(mean(perc_off)))
 ggplot(both_data) +
   geom_line(aes(x = 1:total_number, y = true_total, group = 2, col = "Actual"), size = 3)+
   geom_line(aes(x = 1:total_number, y = total_sum, group = 1, col = "Predicted"), size = 1.5)+
   scale_color_manual(name = "Cases",
                      breaks = c("Predicted", "Actual"),
-                     values = c("Predicted" = "firebrick", "Actual" = "black"))+
-  theme_bw()+
-  labs(x = "Number of Days from March 14",
+                     values = c("Predicted" = "orange", "Actual" = "black"))+
+  theme_economist() + 
+  scale_fill_stata()+
+  labs(x = "Number of Days from March 14, 2020",
        y = "Case Count",
-       title = "Predicted VS. Actual Case Counts Using Arima",
-       subtitle = paste("RMSE: ", calculate_1))+
+       title = "Predicted VS. Actual Case Counts Using ARIMA",
+       subtitle = paste("RMSE: ", calculate_1, ", Average Percentage Error:", calculate_2, "%"))+
   geom_vline(xintercept = train_days)+
   xlim(train_days-20,total_number + 1)+
-  #ylim(500,1000)+
+  #ylim(00,700)+
   theme(panel.grid.minor = element_blank(),
-        panel.grid.major.x = element_blank())
+        panel.grid.major.x = element_blank())+
+   geom_text(aes(x=train_days, label="August 19, 2021", y=170), colour="black", angle=90, vjust = -.7, text=element_text(size=7))
 }
 
-Covid_arima_fun(data = clean_df, train_days = 302, predict_days = 5, p = 2, d = 1, q = 2)
+Covid_arima_fun(data = clean_df, train_days = 130, predict_days = 15, p = 3, d = 2, q = 2)
 
+
+```
+
+
+Plots that are included in my presentation are:
+65 days training, 5 days predicting and parameters of: 3,2,1
+65 days training, 10 days predicting and parameters of: 3,2,1
+65 days training, 15 days predicting and parameters of: 3,2,1
+
+
+302 days training, 3 days predicting and parameters of: 2,1,2
+
+130 days training, 5 days predicting and parameters of 3,2,2
+
+
+```{r}
+data_daily <- covid_rename %>% 
+  group_by(report_date) %>% 
+  summarise(daily_tot = sum(count))
+
+
+
+```
+
+
+```{r}
+
+
+
+Covid_single_fun <- function(data,predict_days,p,d,q){
+ts_obj <- ts(data, start = c(2020,73), frequency = 365)
+  
+arima_obj <- Arima(ts_obj, order = c(p,d,q))
+  
+total_sum <- round(predict(arima_obj, predict_days)$pred[1:predict_days])
+pred_df <- as.data.frame(total_sum)
+
+predicted_total <- clean_df %>% 
+  rbind(pred_df)
+total_number <- 317 + predict_days
+ggplot(predicted_total) +
+  geom_line(aes(x = 1:total_number, y = total_sum), col = "firebrick", size = 1.5)+
+  theme_bw()+
+  labs(x = "Number of Days from March 14, 2020",
+         y = "Case Count",
+         title = "Predicting March 2021")+
+  geom_vline(xintercept = 317)+
+  theme(panel.grid.minor = element_blank(),
+          panel.grid.major.x = element_blank(),
+        legend.position = "none")+
+  xlim(300, total_number)+
+  ylim(240,500)
+}
+
+Covid_single_fun(data = clean_df, predict_days = 15, p = 2, d = 1, q = 2)
+auto.arima(ts_obj)
 
 ```
 
@@ -242,6 +335,18 @@ Use the Augmented dickey fuller test to determine if the time series is stationa
 
 
 
+## Equations used in presentation
+
+
+$ \underbrace{\widehat{Y}_t}_\text{Predited Value} = \overbrace{ \mu}^\text{Mean} + \underbrace{\phi_1 Y_{t-1}+...+\phi_pY_{t-p}} _\text{Auto-Regressive Parameters}+ \overbrace{\theta_1 \epsilon_{t-1}+...+ \theta_q \epsilon_{t-q} }^\text{Moving Average Parameters}+ \underbrace{\epsilon_t}_\text{White Noise}$
+
+```{r}
+
+time_series <- ts(data, start = c(2020,73), frequency = 365)
+Arima(time_series, order = c(p,d,q))
+
+
+```
 
 ## Modeling Procedure using Arima()
 
